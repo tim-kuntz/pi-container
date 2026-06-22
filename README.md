@@ -1,72 +1,54 @@
-<p align="center">
-  <img src="blog-image.jpg" alt="pi coding agent in an Apple Container" width="100%">
-</p>
+# pi-container
 
-<h1 align="center">pi-container</h1>
-
-<p align="center">
-  <strong>A sovereign, npm-free local coding agent on macOS.</strong><br>
-  The <code>pi</code> coding agent runs in a disposable Apple <code>container</code> micro-VM and talks to a local
-  MLX-Swift model on the host — no Node, no npm, no agent binary on your work machine.
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/platform-macOS%2026%20(Tahoe)%20%C2%B7%20Apple%20Silicon-black" alt="platform">
-  <img src="https://img.shields.io/badge/runtime-Apple%20container-blue" alt="runtime">
-  <img src="https://img.shields.io/badge/agent-pi--coding--agent%20%C2%B7%20Node%2022-339933" alt="agent">
-  <img src="https://img.shields.io/badge/model-gemma--4--26b%20%C2%B7%20MLX--Swift-orange" alt="model">
-  <img src="https://img.shields.io/badge/status-hands--on%20draft-yellow" alt="status">
-</p>
-
----
+> Originally forked from `michaelhannecke/pi-container`. This variant swaps host-local MLX inference for OpenRouter behind a credential-injecting host proxy.
 
 ## Overview
 
 A modern coding agent reads your files, runs shell commands, and installs whatever it decides it needs. On a work machine in a regulated context that is an unacceptable blast radius. This repository contains a **runnable setup** that closes it:
 
-- **Inference stays native on the host** — MLX-Swift needs Apple Silicon's Metal/ANE, which a Linux VM does not expose.
-- **The agent runtime is sandboxed in its own VM** — Apple `container` gives each container a lightweight VM, not shared-kernel namespaces.
-- **The host stays clean** — no Node, no npm, no `pi` binary; the agent lives only inside an image and is discarded on exit.
-
-The full step-by-step walkthrough is the article **[`en-pi-apple-container.md`](en-pi-apple-container.md)** (English companion to a German MLX-Swift writing series). The files in this repo are the runnable reference for that article — change one, change the other.
+* **The agent runtime is sandboxed in its own VM** — Apple `container` gives each container a lightweight VM, not shared-kernel namespaces.
+* **The host stays clean** — no Node, no npm, no `pi` binary; the agent lives only inside an image and is discarded on exit.
 
 ## Architecture
 
-```
+```txt
 ┌─────────────────────────────┐        ┌──────────────────────────────┐
 │ Host (macOS, Apple Silicon) │        │ Apple Container (Linux VM)   │
 │                             │        │                              │
-│  MLX-Swift server           │◄──────►│  pi-coding-agent             │
-│  /v1/chat/completions       │ Bridge │  (Node 22, ripgrep, git)     │
-│  gemma-4-26b-4bit           │        │  Workspace: /workspace       │
-└─────────────────────────────┘        └──────────────────────────────┘
+│  Caddy proxy :8080          │◄──────►│  pi-coding-agent             │
+│  injects Authorization      │ Bridge │  (Node, ripgrep, git)        │
+│  OPENROUTER_KEY in env       │        │  Workspace: /workspace       │
+│         │                   │        │  apiKey: "not-required"      │
+│         ▼                   │        │  (no key in auth.json)       │
+│  openrouter.ai              │        └──────────────────────────────┘
+└─────────────────────────────┘
 ```
 
-- **Inference** runs on the host (it has to — no Metal/ANE in a Linux VM).
-- **Tool-calling sandbox** runs in the container — a clean split between model runtime and agent runtime.
-- **pi** reaches the host only over the container bridge; the gateway IP is environment-dependent and discovered at runtime, never hardcoded.
+* **Inference** runs on OpenRouter. The agent reaches it only through a host-side proxy that injects the `Authorization` header — the API key lives in the proxy's environment on the host and never enters the container.
+* **Tool-calling sandbox** runs in the container — a clean split between credential holder and agent runtime.
+* **pi** reaches the host only over the container bridge; the gateway IP is environment-dependent and discovered at runtime, never hardcoded.
 
 ## Table of contents
 
-- [Repository structure](#repository-structure)
-- [Prerequisites](#prerequisites)
-- [Quickstart](#quickstart)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [The article](#the-article)
-- [Notes & caveats](#notes--caveats)
-- [License](#license)
+* [Repository structure](#repository-structure)
+* [Prerequisites](#prerequisites)
+* [Quickstart](#quickstart)
+* [Configuration](#configuration)
+* [Troubleshooting](#troubleshooting)
+* [Notes & caveats](#notes--caveats)
+* [License](#license)
 
 ## Repository structure
 
-```
+```txt
 .
-├── en-pi-apple-container.md                      # the step-by-step article (English)
-├── blog-image.jpg                                # article / README banner
-├── Containerfile                                 # node:22-bookworm-slim + pi installed globally
+├── Containerfile                                 # node-current-slim + pi installed globally
+├── Caddyfile                                     # host proxy that injects the OpenRouter auth header
 ├── pi-config/
 │   ├── AGENTS.md                                 # global agent rules (container variant)
-│   ├── models.json                               # provider + model definition
+│   ├── settings.json                             # default provider / model / thinking level
+│   ├── models.json                               # provider + model definition (points at the proxy)
+│   ├── auth.json                                 # empty — no credential crosses the mount
 │   └── extensions/
 │       └── protected-paths/
 │           └── index.ts                          # tool-call guardrail for sensitive paths
@@ -79,11 +61,12 @@ The full step-by-step walkthrough is the article **[`en-pi-apple-container.md`](
 
 ## Prerequisites
 
-- **macOS 26 (Tahoe) on Apple Silicon, recommended.** `container` technically runs on macOS 15, but its networking is significantly limited there and this whole setup lives or dies on container-to-host networking. Treat macOS 15 as unsupported here.
-- Apple `container` CLI installed (`container --version` must answer).
-- **macOS Local Network permission grantable** — recent macOS gates local traffic behind a privacy prompt; it must be allowed for the container runtime.
-- A local model server running **on the host** with an OpenAI-compatible `/v1/chat/completions` endpoint, serving the model you've loaded (e.g. `gemma-4-26b-a4b-it-4bit`), bound to `0.0.0.0:8080` (not only `127.0.0.1`). Native tool-calling is model-dependent — verify it for an agent workflow.
-- **No Node and no npm on the host** — that is the point; the agent lives only in the image.
+* **macOS 26 (Tahoe) on Apple Silicon, recommended.** `container` technically runs on macOS 15, but its networking is significantly limited there and this whole setup lives or dies on container-to-host networking. Treat macOS 15 as unsupported here.
+* Apple `container` CLI installed (`container --version` must answer).
+* **macOS Local Network permission grantable** — recent macOS gates local traffic behind a privacy prompt; it must be allowed for the container runtime.
+* **Caddy on the host** (`brew install caddy`) — a single static binary, so the host stays Node-free. It runs the credential-injecting proxy.
+* **An OpenRouter API key**, ideally scoped with a spend cap and a model allowlist as blast-radius control. It is supplied to Caddy via the `OPENROUTER_KEY` environment variable and never written into the image or the mounted config.
+* **No Node and no npm on the host** — that is the point; the agent lives only in the image.
 
 ## Quickstart
 
@@ -93,36 +76,58 @@ The full step-by-step walkthrough is the article **[`en-pi-apple-container.md`](
 ./scripts/build.sh
 ```
 
-Produces `pi-coding-agent:local` (override the tag with `IMAGE_TAG=...`).
+Produces `pi-coding-agent:openrouter` (override the tag with `IMAGE_TAG=...`).
 
-### 2. Discover the host bridge IP
-
-From inside the container, the host is reachable via the bridge's default gateway. The address is environment-dependent, so discover it instead of assuming a subnet. The image's entrypoint is `pi`, so override it with `--entrypoint sh` for a one-off command (otherwise `pi` starts and reports "No API key found for the selected model"):
+### 2. Run the agent
 
 ```bash
-container run --rm --entrypoint sh pi-coding-agent:local -c "ip route | awk '/default/ {print \$3}'"
+PROJECT_DIR=~/projects/your-repo ./scripts/run.sh
 ```
 
-If the printed gateway differs from the default in `pi-config/models.json`, update `providers.mlx-local.baseUrl` accordingly (keep the `:8080/v1` suffix).
+If `PROJECT_DIR` is not provided, it will default to the current directory via `pwd`.`
 
-### 3. Run the agent
-
-```bash
-PROJECT_DIR=~/projects/your-repo ./scripts/run.sh --model mlx-local/gemma4-instruct
-```
+The default provider and model come from `pi-config/settings.json`; pass `--model openrouter-proxy/qwen3-coder` to override.
 
 `run.sh` mounts exactly two things, and nothing else crosses the boundary:
 
-- `pi-config/` → `/home/pi/.pi/agent` (provider config, `AGENTS.md`, extensions)
-- `$PROJECT_DIR` → `/workspace` (the project being worked on)
+* `~/.pi/agent` → `/home/pi/.pi/agent` (provider config, `AGENTS.md`, extensions)
+* `$PROJECT_DIR` → `/workspace` (the project being worked on)
 
 `--rm` discards the VM and its writable layer on exit. The host is byte-for-byte unchanged.
 
 ## Configuration
 
+### Host proxy
+
+Started in the run script but can be run separately for testing/debugging. It is a Caddy instance with this `Caddyfile`:
+
+```bash
+OPENROUTER_KEY=sk-or-v1-... caddy run --config ./Caddyfile
+```
+
+Caddy listens on `0.0.0.0:8080` and forwards to `openrouter.ai`, adding the `Authorization` header from `OPENROUTER_KEY`. Bind to `0.0.0.0` (the [Caddyfile](Caddyfile) already does): the container is a separate VM and cannot reach host `127.0.0.1`.
+
+### Host bridge IP
+
+From inside the container, the host is reachable via the bridge's default gateway. The address is environment-dependent, so discover it instead of assuming a subnet. The image's entrypoint is `pi`, so override it with `--entrypoint sh` for a one-off command:
+
+```bash
+container run --rm --entrypoint sh pi-coding-agent:openrouter -c "ip route | awk '/default/ {print \$3}'"
+```
+
+If the printed gateway differs from the default in `pi-config/models.json`, update `providers.openrouter-proxy.baseUrl` accordingly (keep the `:8080/api/v1` suffix — OpenRouter's API path includes `/api`).
+
+### Credential proxy — `Caddyfile`
+
+The OpenRouter key never enters the container. Caddy runs on the host, holds the key in its `OPENROUTER_KEY` environment variable, and injects `Authorization: Bearer ...` on every request it forwards to `openrouter.ai`. pi inside the container points at this proxy and carries no secret. Removing the key from the agent's reach is the real win over file/env tricks — the agent can't exfiltrate a credential it never receives.
+
 ### Models & provider — `pi-config/models.json`
 
-Defines the `mlx-local` provider with `api: "openai-completions"` and a nested `models` array. `apiKey` is `"not-required"` (a local server needs no secret, so none can leak). Each model's `id` must be **exactly** what the server's `/v1/models` reports — here the full model path `/Users/michael/models/gemma-4-26b-a4b-it-4bit` — while `name` (`mlx-local/gemma4-instruct`) is the handle `--model` matches against. `contextWindow`/`maxTokens` are optional; omitted here, so pi's defaults (128K / 16.4K) apply — set them to your server's real limits.
+Defines the `openrouter-proxy` provider with `api: "openai-completions"` and a nested `models` array. `apiKey` is `"not-required"`: the proxy supplies the real credential, so none lives in the mounted config. `baseUrl` points at the host bridge (`http://<gateway>:8080/api/v1`) — the same bridge slot the original MLX server used. The `/api/v1` path matches OpenRouter's real API path, which the proxy passes through unchanged. Each model's `id` is what gets forwarded to OpenRouter (e.g. `qwen/qwen3-coder-next`); `name` (`openrouter-proxy/qwen3-coder`) is the handle `--model` and `settings.json` match against.
+
+### Defaults — `pi-config/settings.json`
+
+`defaultProvider` (`openrouter-proxy`), `defaultModel` (`openrouter-proxy/qwen3-coder`), and `defaultThinkingLevel` so `run.sh` needs no `--model` flag. `pi-config/auth.json` is intentionally empty (`{}`) — there is no key to mount.
 
 ### Global agent rules — `pi-config/AGENTS.md`
 
@@ -137,23 +142,18 @@ A defense-in-depth backstop at `pi-config/extensions/protected-paths/index.ts`. 
 | Symptom | Cause & fix |
 |---|---|
 | Requests hang/fail with no error, empty reply | **Local Network permission not granted.** *System Settings → Privacy & Security → Local Network* — enable the container runtime, then fully quit and reopen the requesting app. Most common first-run failure on recent macOS. |
-| "Can't reach the model" | **Host bound to loopback.** The container is a separate VM and cannot reach host `127.0.0.1`. Bind the model server to `0.0.0.0:8080`. |
+| "Can't reach the model" | **Proxy bound to loopback.** The container is a separate VM and cannot reach host `127.0.0.1`. The `Caddyfile` binds `0.0.0.0:8080` — confirm Caddy is actually running. |
 | Connection refused / wrong address | **Wrong bridge IP.** `192.168.64.1` is only a default — re-run the `ip route` discovery and use the actual gateway. |
+| `401`/`403` from the model | **Key not in Caddy's environment.** Confirm `OPENROUTER_KEY` is set in the shell running `caddy`. OpenRouter may also want `HTTP-Referer`/`X-Title` — add them as `header_up` lines in the `Caddyfile`. |
 | Files not owned by your macOS user | **Expected.** The container writes as UID 1000; your host user is typically UID 501. In the pi workflow (edits go through the `edit` tool) this is acceptable. |
-| Agent answers but never edits | **No native tool-calling.** pi has no `toolCalling` flag — it relies on the model doing OpenAI function-calling. Some instruct builds (Gemma included) may not, and silently no-op. Verify with a real session. |
-| `models.json` loads but chat fails on role/params | Some local servers reject the `developer` role or `reasoning_effort`. Add provider-level `"compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false }` (see pi's `models.md`). |
-
-## The article
-
-**[`en-pi-apple-container.md`](en-pi-apple-container.md)** is a hands-on draft for external publication. It covers, in order: why a coding agent belongs in a container, why Apple `container` over Docker on Apple Silicon, then a careful nine-step walkthrough (install `container` → verify the host model → build → discover the bridge IP → wire `models.json` → guardrails → run → smoke-test) plus troubleshooting.
-
-The code blocks in the article mirror the `Containerfile`, `pi-config/`, and `scripts/` files in this repo verbatim. **Keep them consistent** — if you change a runnable file, update the article, and vice versa.
+| `models.json` loads but chat fails on role/params | If a model rejects the `developer` role or `reasoning_effort`, add provider-level `"compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false }` (see pi's `models.md`). |
 
 ## Notes & caveats
 
-- **MLX stays on the host.** Suggestions to move inference into the container do not work — no Metal, no ANE in a Linux VM.
-- **Bridge IP is environment-dependent.** The address in `models.json` is an example default, discovered at runtime; it can vary by `container` version.
-- **macOS version matters.** Container-to-host networking is the linchpin; older macOS limits it severely.
+* **The key never enters the container** — it lives only in Caddy's environment on the host, and `auth.json` is empty. That removes the credential from the agent's reach, which is stronger than any in-container file/env trick.
+* **The proxy is not *enforced*.** Apple `container` has no clean per-container egress filter, so the design relies on the agent having no key rather than on blocking direct routes to `openrouter.ai`. Scope the OpenRouter key (spend cap + model allowlist) as the real blast-radius control; for hard egress lockdown, use a host `pf` rule keyed to the container subnet.
+* **Bridge IP is environment-dependent.** The address in `models.json` is an example default, discovered at runtime; it can vary by `container` version.
+* **macOS version matters.** Container-to-host networking is the linchpin; older macOS limits it severely.
 
 ## License
 

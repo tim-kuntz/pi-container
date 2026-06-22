@@ -1,0 +1,7 @@
+{
+  "lastChangelogVersion": "0.79.6",
+  "defaultProvider": "openrouter-proxy",
+  "defaultModel": "openrouter-proxy/qwen3-coder",
+  "defaultThinkingLevel": "medium",
+  "theme": "dark"
+}

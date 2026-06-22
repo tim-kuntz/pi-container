@@ -1,0 +1,21 @@
+# Host-side proxy that injects the OpenRouter Authorization header.
+#
+# The container's pi never sees the API key: it points at this proxy over the
+# container bridge (apiKey "not-required" in models.json), and Caddy adds the
+# real Bearer token on the way out to openrouter.ai. The key lives only in this
+# process's environment, on the host.
+#
+# Run on the host (no Node/npm needed, matching the repo's "host stays clean"
+# goal — Caddy is a single static binary):
+#
+#   OPENROUTER_KEY=sk-or-v1-... caddy run --config ./Caddyfile
+#
+# Bind to 0.0.0.0 so the container VM can reach it over the bridge (host
+# 127.0.0.1 is not reachable from the container — same constraint as the
+# original MLX server).
+:8080 {
+	reverse_proxy https://openrouter.ai {
+		header_up Host openrouter.ai
+		header_up Authorization "Bearer {env.OPENROUTER_KEY}"
+	}
+}

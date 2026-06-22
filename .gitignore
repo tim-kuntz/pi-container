@@ -1,8 +1,9 @@
 # Pi writes session history and possibly other runtime data into the
 # mounted config directory. Do not version it.
-pi-config/sessions/
+pi-config/bin/
 pi-config/cache/
 pi-config/logs/
+pi-config/sessions/
 
 # macOS cruft
 .DS_Store

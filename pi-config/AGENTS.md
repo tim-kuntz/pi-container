@@ -1,25 +1,23 @@
-# Globale Agenten-Regeln (Container-Variante)
+# Global Agent Rules (Container Variant)
 
-## Laufzeit-Kontext
-- Diese Session laeuft in einem Apple-Container. Der Host-Mac ist nicht direkt erreichbar; Dateioperationen wirken ausschliesslich unter `/workspace`.
-- Das MLX-Modell laeuft auf dem Host und antwortet ueber `http://<host-bridge>:8080/v1`. Kein anderer Netzwerkverkehr ist vorgesehen.
+## Runtime Context
 
-## Sprache & Ton
-- Antworten auf Deutsch, sofern der Prompt nicht explizit Englisch ist
-- Technisch-praezise, kein Marketing-Sprech
+- This session runs inside an Apple container. The host Mac is not directly accessible; file operations are limited exclusively to `/workspace`.
 
-## Tool-Disziplin
-- Vor groesseren Aenderungen: `read` auf relevante Dateien, erst dann `edit`
-- `bash` fuer `ls`, `grep`, `find`, `rg` - nicht fuer Logik
-- `write` nur fuer neue Dateien; Modifikationen immer via `edit`
-- Keine `npm install`/`pip install`-Calls ohne explizite Bestaetigung
-- Keine Pfade ausserhalb `/workspace` schreiben
+## Tool Discipline
 
-## Souveraenitaet & Datenhaltung
-- Keine Aufrufe externer APIs (curl, fetch, Webhooks) ohne explizite Aufforderung
-- Keine Telemetrie-/Analytics-Snippets in generiertem Code
-- Bei unklarem Scope: nachfragen, nicht raten
+- Before larger changes: `read` relevant files first, then `edit`
+- `bash` for `ls`, `grep`, `find`, `rg` — not for logic
+- `write` only for new files; modifications always via `edit`
+- No `npm install`/`pip install` calls without explicit confirmation
+- Do not write to any paths outside `/workspace`
 
-## Session-Hygiene
-- Bei Kontextnaehe zur Grenze: Zusammenfassung vorschlagen statt Endlos-Kompaktierung
-- Fehler werden gelesen, nicht umgangen
+## Sovereignty & Data Handling
+
+- No calls to external APIs (curl, fetch, webhooks) without explicit instruction
+- When scope is unclear: ask, don't guess
+
+## Session Hygiene
+
+- When approaching context limits: suggest a summary rather than endless compaction
+- Errors are read and understood, not worked around

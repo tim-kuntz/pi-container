@@ -36,12 +36,12 @@ function isProtectedPath(target: string): { hit: boolean; reason: string } {
   const resolved = path.resolve(target);
   for (const dir of PROTECTED_DIRS) {
     if (resolved === dir || resolved.startsWith(dir + path.sep)) {
-      return { hit: true, reason: `Verzeichnis ${dir}` };
+      return { hit: true, reason: `Directory ${dir}` };
     }
   }
   for (const pattern of PROTECTED_PATTERNS) {
     if (pattern.test(resolved)) {
-      return { hit: true, reason: `Muster ${pattern.source}` };
+      return { hit: true, reason: `Pattern ${pattern.source}` };
     }
   }
   return { hit: false, reason: "" };
@@ -53,12 +53,12 @@ function bashTouchesProtectedPattern(command: string): {
 } {
   for (const pattern of PROTECTED_PATTERNS) {
     if (pattern.test(command)) {
-      return { hit: true, reason: `Muster ${pattern.source} im Command` };
+      return { hit: true, reason: `Pattern ${pattern.source} in command` };
     }
   }
   for (const dir of PROTECTED_DIRS) {
     if (command.includes(dir)) {
-      return { hit: true, reason: `Referenz auf ${dir}` };
+      return { hit: true, reason: `Reference to ${dir}` };
     }
   }
   return { hit: false, reason: "" };
@@ -66,7 +66,7 @@ function bashTouchesProtectedPattern(command: string): {
 
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
-    const { name, input } = event.toolCall;
+    const { toolName: name, input } = event;
 
     if (FILE_TOOLS.has(name)) {
       const target = extractPathFromInput(input);
@@ -76,12 +76,12 @@ export default function (pi: ExtensionAPI) {
       if (!check.hit) return;
 
       const ok = await ctx.ui.confirm(
-        "Geschuetzter Pfad",
-        `Tool "${name}" -> "${target}"\nGrund: ${check.reason}\nZulassen?`,
+        "Protected path",
+        `Tool "${name}" -> "${target}"\nReason: ${check.reason}\nAllow?`,
       );
       if (!ok) {
         throw new Error(
-          `[protected-paths] Zugriff auf ${target} abgelehnt (${check.reason})`,
+          `[protected-paths] Access to ${target} denied (${check.reason})`,
         );
       }
     }
@@ -97,19 +97,19 @@ export default function (pi: ExtensionAPI) {
       if (!check.hit) return;
 
       const ok = await ctx.ui.confirm(
-        "Geschuetztes Pattern im bash-Command",
-        `Command: ${command.slice(0, 200)}${command.length > 200 ? "..." : ""}\nGrund: ${check.reason}\nZulassen?`,
+        "Protected pattern in bash command",
+        `Command: ${command.slice(0, 200)}${command.length > 200 ? "..." : ""}\nReason: ${check.reason}\nAllow?`,
       );
       if (!ok) {
         throw new Error(
-          `[protected-paths] bash-Command abgelehnt (${check.reason})`,
+          `[protected-paths] Bash command denied (${check.reason})`,
         );
       }
     }
   });
 
   ctx_log(
-    `[protected-paths] aktiv - ${PROTECTED_DIRS.length} Dirs, ${PROTECTED_PATTERNS.length} Muster`,
+    `[protected-paths] active - ${PROTECTED_DIRS.length} dirs, ${PROTECTED_PATTERNS.length} patterns`,
   );
 }
 
