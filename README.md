@@ -17,7 +17,7 @@ A modern coding agent reads your files, runs shell commands, and installs whatev
 │                             │        │                              │
 │  Caddy proxy :8080          │◄──────►│  pi-coding-agent             │
 │  injects Authorization      │ Bridge │  (Node, ripgrep, git)        │
-│  OPENROUTER_KEY in env       │        │  Workspace: /workspace       │
+│  OPENROUTER_KEY in env      │        │  Workspace: /workspace       │
 │         │                   │        │  apiKey: "not-required"      │
 │         ▼                   │        │  (no key in auth.json)       │
 │  openrouter.ai              │        └──────────────────────────────┘
@@ -62,7 +62,7 @@ A modern coding agent reads your files, runs shell commands, and installs whatev
 ## Prerequisites
 
 * **macOS 26 (Tahoe) on Apple Silicon, recommended.** `container` technically runs on macOS 15, but its networking is significantly limited there and this whole setup lives or dies on container-to-host networking. Treat macOS 15 as unsupported here.
-* Apple `container` CLI installed (`container --version` must answer).
+* Apple [container](https://github.com/apple/container) CLI installed (`container --version` must answer).
 * **macOS Local Network permission grantable** — recent macOS gates local traffic behind a privacy prompt; it must be allowed for the container runtime.
 * **Caddy on the host** (`brew install caddy`) — a single static binary, so the host stays Node-free. It runs the credential-injecting proxy.
 * **An OpenRouter API key**, ideally scoped with a spend cap and a model allowlist as blast-radius control. It is supplied to Caddy via the `OPENROUTER_KEY` environment variable and never written into the image or the mounted config.
@@ -78,7 +78,15 @@ A modern coding agent reads your files, runs shell commands, and installs whatev
 
 Produces `pi-coding-agent:openrouter` (override the tag with `IMAGE_TAG=...`).
 
-### 2. Run the agent
+### 2. Update ip route in models.json
+
+Run the following and update `baseUrl` in models.json to reference the host bridge IP. The address is environment-dependent.
+
+```bash
+container run --rm --entrypoint sh pi-coding-agent:openrouter -c "ip route | awk '/default/ {print \$3}'"
+```
+
+### 3. Run the agent
 
 ```bash
 PROJECT_DIR=~/projects/your-repo ./scripts/run.sh
@@ -90,7 +98,7 @@ The default provider and model come from `pi-config/settings.json`; pass `--mode
 
 `run.sh` mounts exactly two things, and nothing else crosses the boundary:
 
-* `~/.pi/agent` → `/home/pi/.pi/agent` (provider config, `AGENTS.md`, extensions)
+* `$REPO_ROOT/pi-config` → `/home/pi/.pi/agent` (provider config, `AGENTS.md`, extensions)
 * `$PROJECT_DIR` → `/workspace` (the project being worked on)
 
 `--rm` discards the VM and its writable layer on exit. The host is byte-for-byte unchanged.

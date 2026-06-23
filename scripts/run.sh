@@ -48,6 +48,9 @@ else
   OPENROUTER_KEY="$OPENROUTER_KEY" caddy start --config "$REPO_ROOT/Caddyfile"
 fi
 # ---------------------------------------------------------------------------
+# Add the following container option if you don't want to start `pi`
+# immediately and would rather get a shell for debugging:
+#   --entrypoint /bin/bash \
 
 container run \
   --rm \
@@ -56,6 +59,5 @@ container run \
   --volume "$REPO_ROOT/pi-config:/home/pi/.pi/agent" \
   --volume "$PROJECT_DIR:/workspace" \
   --workdir /workspace \
-  --entrypoint /bin/bash \
   "$IMAGE_TAG" \
   "$@"
